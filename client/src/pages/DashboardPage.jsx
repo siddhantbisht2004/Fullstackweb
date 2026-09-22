@@ -1,17 +1,17 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
 import api from '../api/client';
+import { useAuth } from '../context/AuthContext';
 
-export default function ListingDetailPage() {
-  const { id } = useParams();
-  const [listing, setListing] = useState(null);
+export default function DashboardPage() {
+  const { user, logout } = useAuth();
+  const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchListing = async () => {
+    const fetchBookings = async () => {
       try {
-        const { data } = await api.get(`/listings/${id}`);
-        setListing(data);
+        const { data } = await api.get('/bookings');
+        setBookings(data);
       } catch (err) {
         console.error(err);
       } finally {
@@ -19,38 +19,50 @@ export default function ListingDetailPage() {
       }
     };
 
-    fetchListing();
-  }, [id]);
-
-  if (loading) return <div className="container notice">Loading listing...</div>;
-  if (!listing) return <div className="container notice">Listing not found.</div>;
+    if (user) {
+      fetchBookings();
+    } else {
+      setLoading(false);
+    }
+  }, [user]);
 
   return (
-    <div className="container detail-page">
+    <div className="container" style={{ padding: '32px 0 60px' }}>
       <div className="button-row" style={{ marginBottom: 22 }}>
-        <Link className="primary-btn" to="/listings">Back to listings</Link>
+        <a className="primary-btn" href="/listings">Browse listings</a>
+        <button className="danger-btn" onClick={logout}>Logout</button>
       </div>
 
-      <div className="detail-layout">
-        <div className="image-box">
-          <img
-            src={listing.image?.url || 'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1200&q=80'}
-            alt={listing.title}
-          />
+      <div className="card">
+        <h1>Dashboard</h1>
+        <p className="muted">Welcome, {user?.username || 'guest'}.</p>
+      </div>
+
+      {loading ? (
+        <div className="notice" style={{ marginTop: 20 }}>Loading bookings...</div>
+      ) : (
+        <div style={{ marginTop: 24 }}>
+          {bookings.length === 0 ? (
+            <div className="notice">No bookings yet.</div>
+          ) : (
+            bookings.map((booking) => (
+              <div key={booking._id} className="card" style={{ marginBottom: 12 }}>
+                <h3>{booking.listing?.title || 'Listing'}</h3>
+                <p>
+                  <strong>Status:</strong> {booking.status}
+                </p>
+                <p>
+                  <strong>Dates:</strong> {new Date(booking.checkIn).toLocaleDateString()} to{' '}
+                  {new Date(booking.checkOut).toLocaleDateString()}
+                </p>
+                <p>
+                  <strong>Total:</strong> ₹{booking.totalAmount}
+                </p>
+              </div>
+            ))
+          )}
         </div>
-
-        <aside className="meta-box">
-          <span className="tag">₹{listing.price}</span>
-          <h1 className="page-title">{listing.title}</h1>
-          <p className="muted">{listing.location}</p>
-          <p>{listing.description}</p>
-
-          <ul className="listing-list">
-            <li><strong>Country:</strong> {listing.country}</li>
-            <li><strong>Features:</strong> {listing.features?.join(', ') || 'Not specified'}</li>
-          </ul>
-        </aside>
-      </div>
+      )}
     </div>
   );
 }

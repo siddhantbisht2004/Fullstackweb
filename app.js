@@ -20,6 +20,9 @@ const flash = require("connect-flash");
 const passport = require("passport");
 const localStrategy = require("passport-local");
 const User = require("./models/user.js");
+const Listing = require("./models/listing.js");
+const Booking = require("./models/booking.js");
+const { createBookingRequest } = require("./utils/bookingService.js");
 
 const listingRouter = require("./routes/listing.js");
 const reviewRouter = require("./routes/review.js");
@@ -183,21 +186,19 @@ app.get("/api/auth/session", (req, res) => {
         return res.status(401).json({ user: null });
     }
 
-    const user = {
+    res.json({ user: {
         _id: req.user._id,
         username: req.user.username,
         email: req.user.email,
         role: req.user.role,
         fullName: req.user.fullName,
         phone: req.user.phone,
-    };
-
-    res.json({ user });
+    } });
 });
 
 app.post("/api/auth/signup", async (req, res, next) => {
     try {
-        let { username, email, password, role, fullName, phone } = req.body;
+        const { username, email, password, role, fullName, phone } = req.body;
         const allowedRoles = ["client", "owner"];
         const userRole = allowedRoles.includes(role) ? role : "client";
         const newUser = new User({
@@ -288,6 +289,31 @@ app.get("/api/listings/:id", async (req, res) => {
     }
 
     res.json(listing);
+});
+
+app.post("/api/listings/:id/book", async (req, res, next) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+        const { booking } = await createBookingRequest({
+            listingId: req.params.id,
+            client: req.user,
+            input: req.body,
+            io,
+        });
+
+        return res.status(201).json({
+            booking,
+            message: "Booking request submitted successfully.",
+        });
+    } catch (err) {
+        const status = err.statusCode || 500;
+        return res.status(status).json({
+            message: err.message || "Booking failed.",
+        });
+    }
 });
 
 app.get("/api/bookings", async (req, res) => {

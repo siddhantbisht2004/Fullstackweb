@@ -5,6 +5,7 @@ import ListingDetailPage from './pages/ListingDetailPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import DashboardPage from './pages/DashboardPage';
+import BookingPage from './pages/BookingPage';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -18,6 +19,15 @@ export default function App() {
           <Route path="/signup" element={<SignupPage />} />
           <Route path="/listings" element={<ListingsPage />} />
           <Route path="/listings/:id" element={<ListingDetailPage />} />
+
+          <Route
+            path="/bookings/new/:id"
+            element={
+              <ProtectedRoute>
+                <BookingPage />
+              </ProtectedRoute>
+            }
+          />
 
           <Route
             path="/dashboard"

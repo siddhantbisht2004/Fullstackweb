@@ -53,6 +53,26 @@ app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    const allowedOrigins = [
+        "http://localhost:5173",
+        process.env.CLIENT_ORIGIN,
+    ].filter(Boolean);
+
+    if (origin && allowedOrigins.includes(origin)) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+    }
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+    if (req.method === "OPTIONS") {
+        return res.sendStatus(204);
+    }
+
+    next();
+});
 app.use(methodOverride("_method"));
 app.engine("ejs", ejsMate);
 app.use(express.static(path.join(__dirname, "/public")));
@@ -99,12 +119,12 @@ app.get("/setup", (req, res) => {
   <style>
     body { font-family: 'Inter', sans-serif; background: linear-gradient(135deg, #f5f3ff, #fdf4ff); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
     .setup-card { background: white; border-radius: 24px; padding: 3rem 2.5rem; max-width: 560px; width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.12); border: 1px solid #e5e7eb; }
-    .icon-circle { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #9333ea); display: flex; align-items: center; justify-content: center; font-size: 1.75rem; color: white; margin: 0 auto 1.5rem; }
+    .icon-circle { width: 64px; height: 64px; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #9333ea); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: white; margin: 0 auto 1rem; }
     h2 { font-weight: 800; color: #1a1a2e; }
     .step { display: flex; align-items: flex-start; gap: 1rem; padding: 0.85rem; background: #f9fafb; border-radius: 12px; border: 1px solid #e5e7eb; margin-bottom: 0.75rem; }
-    .step-num { width: 28px; height: 28px; border-radius: 50%; background: #7c3aed; color: white; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
+    .step-num { width: 28px; height: 28px; border-radius: 50%; background: #7c3aed; color: white; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700; }
     code { background: #ede9fe; color: #5b21b6; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
-    .btn-refresh { background: #7c3aed; color: white; border: none; border-radius: 999px; padding: 0.75rem 2rem; font-weight: 700; cursor: pointer; font-size: 1rem; margin-top: 1.5rem; width: 100%; transition: background 0.2s; }
+    .btn-refresh { background: #7c3aed; color: white; border: none; border-radius: 999px; padding: 0.75rem 2rem; font-weight: 700; cursor: pointer; font-size: 1rem; margin-top: 1.5rem; width: 100%; }
     .btn-refresh:hover { background: #5b21b6; }
   </style>
 </head>
@@ -131,7 +151,7 @@ app.get("/setup", (req, res) => {
     </div>
     <div class="step">
       <div class="step-num">5</div>
-      <div><strong>Murf API (for voice chatbot)</strong><br><small class="text-muted">Set <code>MURF_API_KEY</code> and optionally <code>MURF_VOICE_ID</code>, <code>MURF_LOCALE</code>, <code>MURF_STYLE</code></small></div>
+      <div><strong>Murf API (for voice chatbot)</strong><br><small class="text-muted">Set <code>MURF_API_KEY</code> and optionally <code>MURF_VOICE_ID</code>, <code>MURF_LOCALE</code>, <code>MURF_LANGUAGE</code></small></div>
     </div>
     <p class="text-muted small text-center mt-3">After adding all secrets, restart the application.</p>
     <button class="btn-refresh" onclick="location.reload()"><i class="fa-solid fa-rotate-right me-2"></i>Check Again</button>
@@ -157,6 +177,130 @@ app.use((req, res, next) => {
 });
 
 app.set("io", io);
+
+app.get("/api/auth/session", (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ user: null });
+    }
+
+    const user = {
+        _id: req.user._id,
+        username: req.user.username,
+        email: req.user.email,
+        role: req.user.role,
+        fullName: req.user.fullName,
+        phone: req.user.phone,
+    };
+
+    res.json({ user });
+});
+
+app.post("/api/auth/signup", async (req, res, next) => {
+    try {
+        let { username, email, password, role, fullName, phone } = req.body;
+        const allowedRoles = ["client", "owner"];
+        const userRole = allowedRoles.includes(role) ? role : "client";
+        const newUser = new User({
+            email,
+            username,
+            role: userRole,
+            fullName: fullName || "",
+            phone: phone || "",
+        });
+        const registeredUser = await User.register(newUser, password);
+        req.login(registeredUser, (err) => {
+            if (err) return next(err);
+            return res.status(201).json({
+                user: {
+                    _id: registeredUser._id,
+                    username: registeredUser.username,
+                    email: registeredUser.email,
+                    role: registeredUser.role,
+                    fullName: registeredUser.fullName,
+                    phone: registeredUser.phone,
+                },
+            });
+        });
+    } catch (e) {
+        return res.status(400).json({ message: e.message || "Signup failed" });
+    }
+});
+
+app.post("/api/auth/login", (req, res, next) => {
+    passport.authenticate("local", (err, user, info) => {
+        if (err) return next(err);
+        if (!user) {
+            return res.status(401).json({ message: info?.message || "Invalid username or password" });
+        }
+
+        req.login(user, (loginErr) => {
+            if (loginErr) return next(loginErr);
+            return res.json({
+                user: {
+                    _id: user._id,
+                    username: user.username,
+                    email: user.email,
+                    role: user.role,
+                    fullName: user.fullName,
+                    phone: user.phone,
+                },
+            });
+        });
+    })(req, res, next);
+});
+
+app.post("/api/auth/logout", (req, res, next) => {
+    req.logout((err) => {
+        if (err) return next(err);
+        req.session.destroy(() => {
+            res.json({ success: true });
+        });
+    });
+});
+
+app.get("/api/listings", async (req, res) => {
+    const { search, feature } = req.query;
+    let filter = {};
+
+    if (search) {
+        filter.$or = [
+            { title: { $regex: search, $options: "i" } },
+            { location: { $regex: search, $options: "i" } },
+            { country: { $regex: search, $options: "i" } },
+        ];
+    }
+
+    if (feature) {
+        filter.features = feature;
+    }
+
+    const allListings = await Listing.find(filter).sort({ createdAt: -1 });
+    res.json(allListings);
+});
+
+app.get("/api/listings/:id", async (req, res) => {
+    const listing = await Listing.findById(req.params.id)
+        .populate({ path: "reviews", populate: { path: "author" } })
+        .populate("owner");
+
+    if (!listing) {
+        return res.status(404).json({ message: "Listing not found" });
+    }
+
+    res.json(listing);
+});
+
+app.get("/api/bookings", async (req, res) => {
+    if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const bookings = await Booking.find({ client: req.user._id })
+        .populate("listing")
+        .sort({ createdAt: -1 });
+
+    res.json(bookings);
+});
 
 io.on("connection", (socket) => {
     socket.on("join", (userId) => {
